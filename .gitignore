@@ -1,0 +1,20 @@
+# Ignorar arquivos temporários e pastas do Python
+__pycache__/
+venv/
+.env
+
+# Ignorar as pastas onde as fotos das OS são salvas/testadas
+/FOTOS/
+/Ordem de servicos/
+/lock_dir/
+OS_FOTOS_TEMP/
+/QUARENTENA/
+
+*.sha256
+historico.txt
+historico_auditoria.log
+relatorio_desempenho_tcc.txt
+relatorio_nuvem_tcc.txt
+*.pyc
+.DS_Store
+Thumbs.db

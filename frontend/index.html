@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+    input, button { margin: 10px; padding: 10px; font-size: 16px; width: 90%; max-width: 400px; }
+    button { background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button:disabled { background-color: #6c757d; cursor: not-allowed; }
+    #status { margin-top: 20px; color: #555; font-weight: bold; }
+    .progress-bar { width: 90%; max-width: 400px; background-color: #e0e0e0; margin: 10px auto; border-radius: 5px; display: none; }
+    .progress-fill { height: 10px; background-color: #007bff; width: 0%; border-radius: 5px; transition: width 0.2s; }
+  </style>
+  <!-- Importação da biblioteca hash-wasm para processamento progressivo -->
+  <script src="https://cdn.jsdelivr.net/npm/hash-wasm@4/dist/sha256.umd.min.js"></script>
+</head>
+<body>
+  <h2>📷 Captura de Evidências - OS</h2>
+  
+  <input type="text" id="osNumber" placeholder="Ex: 15746" required>
+  <input type="file" id="fileInput" accept="image/*,video/*" required>
+  <button id="btnSubmit" onclick="iniciarProcesso()">Enviar Evidência</button>
+  
+  <div id="progressContainer" class="progress-bar">
+    <div id="progressFill" class="progress-fill"></div>
+  </div>
+  <p id="status"></p>
+
+  <script>
+    async function iniciarProcesso() {
+      const osNumber = document.getElementById('osNumber').value;
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+      const statusObj = document.getElementById('status');
+      const btn = document.getElementById('btnSubmit');
+      const progressContainer = document.getElementById('progressContainer');
+      const progressFill = document.getElementById('progressFill');
+      
+      if (!osNumber || !file) { 
+        statusObj.innerText = "Erro: Preencha a OS e selecione um ficheiro."; 
+        return; 
+      }
+      
+      try {
+        btn.disabled = true;
+        progressContainer.style.display = "block";
+        
+        let fileHash;
+        let base64Data;
+
+        // Se for imagem, comprime e calcula hash clássico. Se for vídeo, usa Hash-Wasm Progressivo.
+        if (file.type.startsWith('image/')) {
+          statusObj.innerText = "Comprimindo imagem (Canvas)...";
+          base64Data = await compressImage(file);
+          statusObj.innerText = "Calculando Hash da Imagem...";
+          fileHash = await calculateSHA256_Native(base64Data);
+        } else {
+          // FLUXO DE VÍDEO: Cálculo Progressivo de Hash (Não explode a RAM)
+          fileHash = await calculateHashWasm(file, statusObj, progressFill);
+          statusObj.innerText = "Convertendo vídeo para envio...";
+          base64Data = await fileToBase64(file);
+        }
+        
+        statusObj.innerText = "Enviando pacotes para a Nuvem...";
+        progressFill.style.width = "100%";
+        
+        // Chamada ao Google Apps Script
+        google.script.run
+          .withSuccessHandler(msg => {
+            statusObj.innerText = msg;
+            btn.disabled = false;
+          })
+          .withFailureHandler(err => {
+            statusObj.innerText = "Erro no Upload: " + err;
+            btn.disabled = false;
+          })
+          .processUpload(base64Data, file.name, fileHash, osNumber);
+          
+      } catch (error) { 
+        statusObj.innerText = "Falha crítica: " + error.message;
+        btn.disabled = false;
+      }
+    }
+
+    // ---------------------------------------------------------
+    // NOVO: Cálculo Criptográfico Progressivo para Vídeos
+    // ---------------------------------------------------------
+    async function calculateHashWasm(file, statusObj, progressFill) {
+      // Cria a instância do algoritmo SHA-256 no WebAssembly
+      const hasher = await hashwasm.createSHA256();
+      const chunkSize = 5 * 1024 * 1024; // Pedaços de 5MB
+      let offset = 0;
+
+      while (offset < file.size) {
+        // Corta um pedaço de 5MB do ficheiro original sem carregar tudo na memória
+        const chunk = file.slice(offset, offset + chunkSize);
+        const buffer = await chunk.arrayBuffer();
+        
+        // Alimenta o algoritmo
+        hasher.update(new Uint8Array(buffer));
+        
+        offset += chunkSize;
+        
+        // Atualiza a interface
+        const percent = Math.min(Math.round((offset / file.size) * 100), 100);
+        statusObj.innerText = `Lendo Vídeo e Calculando Hash (${percent}%)...`;
+        progressFill.style.width = percent + "%";
+      }
+
+      // Retorna a assinatura criptográfica final (Hexadecimal)
+      return hasher.digest();
+    }
+
+    // ---------------------------------------------------------
+    // Funções Legadas (Imagens e Base64)
+    // ---------------------------------------------------------
+    function compressImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 1080; 
+            const scaleSize = MAX_WIDTH / img.width;
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scaleSize;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          }
+          img.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function calculateSHA256_Native(base64Data) {
+      const b64String = base64Data.split(',')[1];
+      const byteCharacters = atob(b64String);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', byteArray);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+        reader.readAsDataURL(file);
+      });
+    }
+  </script>
+</body>
+</html>
