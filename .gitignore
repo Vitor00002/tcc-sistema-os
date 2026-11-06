@@ -1,20 +1,40 @@
-# Ignorar arquivos temporários e pastas do Python
-__pycache__/
-venv/
+# ==========================================
+# DEPENDÊNCIAS (CRÍTICO)
+# ==========================================
+node_modules/
 .env
 
-# Ignorar as pastas onde as fotos das OS são salvas/testadas
-/FOTOS/
-/Ordem de servicos/
-/lock_dir/
+# ==========================================
+# PASTAS DE TESTE E MÍDIAS (Se criadas localmente)
+# ==========================================
 OS_FOTOS_TEMP/
+RECEPCAO/
+lock_dir/
 /QUARENTENA/
 
+# ==========================================
+# FICHEIROS TEMPORÁRIOS DO MOTOR (Batch / Python)
+# ==========================================
+dest.txt
+local.txt
+esta_aberto.txt
+fotos.txt
 *.sha256
-historico.txt
+*.locktest
+
+# ==========================================
+# FICHEIROS DE LOG E RELATÓRIOS
+# ==========================================
 historico_auditoria.log
+historico.txt
 relatorio_desempenho_tcc.txt
 relatorio_nuvem_tcc.txt
+
+# ==========================================
+# FICHEIROS DE SISTEMA (Python / Windows)
+# ==========================================
+__pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+*.zip
