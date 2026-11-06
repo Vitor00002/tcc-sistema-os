@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Câmera Bancada Local</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; background-color: #f0f2f5; margin: 0; }
+    .container { max-width: 500px; margin: auto; padding-bottom: 220px; } 
+    .os-block { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; border-left: 5px solid #28a745;}
+    .os-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .os-header input { width: 70%; padding: 10px; border: 2px solid #28a745; border-radius: 5px; font-size: 18px; font-weight: bold; }
+    .btn-remove-block { background: transparent; border: none; color: #dc3545; font-size: 24px; cursor: pointer; padding: 0 10px; }
+    .btn-group { display: flex; gap: 10px; margin-bottom: 10px; }
+    .btn-batch { background-color: #ffc107; color: #333; font-size: 16px; padding: 15px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; flex: 1; text-align: center;} 
+    .queue-list { background: #e9ecef; padding: 10px; border-radius: 5px; min-height: 40px; margin-top: 10px;}
+    .queue-empty { font-size: 12px; color: #6c757d; text-align: center; margin: 0; padding: 10px 0; }
+    .item-fila { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ccc; padding: 8px 0; }
+    .preview-container { display: flex; align-items: center; gap: 10px; overflow: hidden;}
+    .preview-img { width: 40px; height: 40px; border-radius: 5px; border: 1px solid #adb5bd; background: #343a40; display:flex; align-items:center; justify-content:center; color:white; font-size: 20px;}
+    .file-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+    .btn-remover-item { background-color: #dc3545; color: white; border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 10px; font-weight: bold;}
+    .progress-container { width: 100%; background-color: #e2e3e5; border-radius: 5px; margin-top: 15px; display: none; overflow: hidden; border: 1px solid #ced4da;}
+    .progress-bar { height: 22px; width: 0%; background-color: #28a745; text-align: center; line-height: 22px; color: white; font-size: 12px; font-weight: bold; transition: width 0.3s, background-color 0.3s; }
+    .global-actions { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 10px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); display: flex; gap: 10px; justify-content: center; z-index: 100; flex-direction: column;}
+    .global-actions .container-btn { max-width: 500px; width: 100%; display: flex; gap: 10px; margin: auto; }
+    .btn-add-os { background-color: #6c757d; color:white; border:none; border-radius:5px; font-size: 16px; flex:1; padding: 15px; font-weight:bold;}
+    .btn-send-all { background-color: #28a745; color:white; border:none; border-radius:5px; font-size: 16px; flex:1; padding: 15px; font-weight:bold;}
+    #status { position: fixed; top: 0; left: 0; right: 0; background: #004085; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 14px; display: none; z-index: 200; box-shadow: 0 2px 5px rgba(0,0,0,0.2);}
+    #debug-console { max-width: 500px; margin: auto; background-color: #1e1e1e; color: #00ff00; font-family: monospace; font-size: 11px; height: 120px; overflow-y: scroll; padding: 8px; border-radius: 5px; border: 1px solid #333; margin-top: 5px; display: none; text-align: left; }
+    .log-time { color: #888; margin-right: 5px; }
+    .log-warn { color: #ffcc00; }
+    .log-err { color: #ff3333; }
+    .btn-toggle-log { background: none; border: none; color: #adb5bd; font-size: 11px; margin-top: 8px; cursor: pointer; padding: 5px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hash-wasm@4/dist/sha256.umd.min.js"></script>
+</head>
+<body>
+  <div id="status"></div>
+  <div class="container" id="blocksContainer"></div>
+  
+  <div class="global-actions">
+    <div id="debug-console"></div>
+    <div class="container-btn" id="containerBotoes">
+      <button class="btn btn-add-os" type="button" onclick="adicionarBlocoOS()">➕ NOVA OS</button>
+      <button class="btn btn-send-all" type="button" onclick="iniciarEnvioGlobal()">🚀 ENVIAR TUDO</button>
+    </div>
+    <div style="text-align: center;">
+      <button class="btn-toggle-log" onclick="toggleLog()">[ 🔍 Log ]</button>
+    </div>
+  </div>
+
+  <script>
+    var controleBlocos = {}; 
+    var idCounter = 0;
+    var filaDeEnvioGlobal = [];
+    var sessionCode = Math.random().toString(36).substring(2, 5).toUpperCase();
+    var travaDeTela = null;
+
+    window.addEventListener('beforeunload', function (e) {
+      var temArquivo = false;
+      for (var bId in controleBlocos) {
+        if (controleBlocos[bId] && controleBlocos[bId].length > 0) { temArquivo = true; break; }
+      }
+      if (temArquivo) { e.preventDefault(); e.returnValue = ''; return e.returnValue; }
+    });
+
+    function toggleLog() {
+      var consoleDiv = document.getElementById('debug-console');
+      if (consoleDiv.style.display === 'none' || consoleDiv.style.display === '') {
+        consoleDiv.style.display = 'block'; consoleDiv.scrollTop = consoleDiv.scrollHeight;
+      } else { consoleDiv.style.display = 'none'; }
+    }
+
+    function logMsg(msg, tipo) {
+      var consoleDiv = document.getElementById('debug-console');
+      var now = new Date();
+      var timeString = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0') + ":" + now.getSeconds().toString().padStart(2, '0');
+      var corClass = (tipo === "err") ? "log-err" : (tipo === "warn") ? "log-warn" : "";
+      consoleDiv.innerHTML += "<div><span class='log-time'>[" + timeString + "]</span> <span class='" + corClass + "'>" + msg + "</span></div>";
+      consoleDiv.scrollTop = consoleDiv.scrollHeight; 
+    }
+
+    function manterTelaAcesa() {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function(lock) { travaDeTela = lock; logMsg("Tela mantida acesa."); }).catch(function(err) {});
+      }
+    }
+    
+    function liberarTela() {
+      if (travaDeTela !== null) { travaDeTela.release().then(function() { travaDeTela = null; }); }
+    }
+
+    function adicionarBlocoOS() {
+      idCounter++;
+      var blockId = 'block_' + idCounter;
+      controleBlocos[blockId] = []; 
+      
+      var htmlBloco = "" +
+        "<div class='os-block' id='" + blockId + "'>" +
+          "<div class='os-header'>" +
+            "<input type='text' id='input_" + blockId + "' placeholder='Nº da OS' required>" +
+            "<button class='btn-remove-block' onclick=\"removerBlocoOS('" + blockId + "')\">✖</button>" +
+          "</div>" +
+          "<div class='btn-group'>" +
+            "<button class='btn-batch' style='background-color:#17a2b8; color:white;' onclick=\"document.getElementById('camera_" + blockId + "').click()\">📷 Foto</button>" +
+            "<button class='btn-batch' onclick=\"document.getElementById('batch_" + blockId + "').click()\">📁 Galeria</button>" +
+          "</div>" +
+          "<input type='file' id='camera_" + blockId + "' accept='image/*' capture='environment' style='display:none;' onchange=\"processarArquivos(this, '" + blockId + "')\">" +
+          "<input type='file' id='batch_" + blockId + "' accept='image/*,video/*' multiple style='display:none;' onchange=\"processarArquivos(this, '" + blockId + "')\">" +
+          "<div class='queue-list' id='queue_" + blockId + "'><p class='queue-empty'>Nenhum arquivo nesta OS.</p></div>" +
+          "<div class='progress-container' id='progCont_" + blockId + "'><div class='progress-bar' id='progBar_" + blockId + "'>0%</div></div>" +
+        "</div>";
+      document.getElementById('blocksContainer').insertAdjacentHTML('beforeend', htmlBloco);
+    }
+
+    function removerBlocoOS(blockId) {
+      var el = document.getElementById(blockId);
+      if(el) { el.parentNode.removeChild(el); delete controleBlocos[blockId]; }
+    }
+
+    function processarArquivos(input, blockId) {
+      if (input.files && input.files.length > 0) {
+        for (var i = 0; i < input.files.length; i++) {
+          controleBlocos[blockId].push({ fileObj: input.files[i] });
+        }
+        atualizarInterfaceBloco(blockId);
+      }
+      setTimeout(function() { if (input) { input.value = ""; } }, 200);
+    }
+
+    function removerDoBloco(blockId, index) { 
+      controleBlocos[blockId].splice(index, 1); 
+      atualizarInterfaceBloco(blockId); 
+    }
+
+    function atualizarInterfaceBloco(blockId) {
+      var queueDiv = document.getElementById('queue_' + blockId);
+      var arquivos = controleBlocos[blockId];
+      if (arquivos.length === 0) { queueDiv.innerHTML = "<p class='queue-empty'>Nenhum arquivo nesta OS.</p>"; return; }
+      var html = "";
+      for (var i = 0; i < arquivos.length; i++) {
+        var item = arquivos[i];
+        var isVideo = item.fileObj.type.indexOf('video/') === 0;
+        var thumbnail = isVideo ? "🎥" : "🖼️";
+        var mbSize = (item.fileObj.size / (1024*1024)).toFixed(2);
+        var tipoExt = isVideo ? "Vídeo Original" : "Foto Original";
+        
+        html += "" +
+          "<div class='item-fila'>" +
+            "<div class='preview-container'><div class='preview-img'>" + thumbnail + "</div>" +
+              "<span class='file-name'>" + (item.fileObj.name || 'arquivo') + "<br><small style='color:#6c757d'>" + tipoExt + " (" + mbSize + " MB)</small></span>" +
+            "</div><button class='btn-remover-item' onclick=\"removerDoBloco('" + blockId + "', " + i + ")\">X</button>" +
+          "</div>";
+      }
+      queueDiv.innerHTML = html;
+    }
+
+    function mostrarStatus(mensagem, corFundo) {
+      var barra = document.getElementById('status');
+      barra.innerHTML = mensagem; barra.style.backgroundColor = corFundo; barra.style.display = 'block';
+    }
+
+    function iniciarEnvioGlobal() {
+      document.getElementById('debug-console').innerHTML = ""; 
+      logMsg("===== INÍCIO DO PROCESSO =====");
+
+      filaDeEnvioGlobal = []; 
+      var totalArquivosPorBloco = {}; 
+      var enviadosPorBloco = {};
+
+      for (var blockId in controleBlocos) {
+        if (controleBlocos.hasOwnProperty(blockId)) {
+          var arquivosDoBloco = controleBlocos[blockId];
+          var osInput = document.getElementById('input_' + blockId);
+          if (arquivosDoBloco.length > 0) {
+            if (osInput.value.trim() === "") { alert("OS em branco!"); osInput.focus(); return; }
+            totalArquivosPorBloco[blockId] = arquivosDoBloco.length; 
+            enviadosPorBloco[blockId] = 0;
+            
+            var pCont = document.getElementById('progCont_' + blockId); 
+            var pBar = document.getElementById('progBar_' + blockId);
+            if (pCont && pBar) { pCont.style.display = 'block'; pBar.style.width = '0%'; pBar.innerText = '0%'; }
+          }
+          
+          var osNumber = osInput.value.trim();
+          for (var i = 0; i < arquivosDoBloco.length; i++) {
+            var itemData = arquivosDoBloco[i];
+            var nameParts = itemData.fileObj.name ? itemData.fileObj.name.split('.') : [];
+            var extensao = nameParts.length > 1 ? nameParts.pop() : (itemData.fileObj.type.indexOf('video') === 0 ? "mov" : "jpg");
+            
+            var novoNome = "OS.00" + osNumber + "_" + sessionCode + "_" + (i+1 < 10 ? "0"+(i+1) : i+1) + "." + extensao;
+            
+            filaDeEnvioGlobal.push({ 
+                data: itemData, 
+                blockId: blockId, 
+                novoNome: novoNome,
+                osNumber: osNumber,
+                incrementar: function(bId) {
+                  enviadosPorBloco[bId]++;
+                  var pct = Math.round((enviadosPorBloco[bId] / totalArquivosPorBloco[bId]) * 100);
+                  var b = document.getElementById('progBar_' + bId);
+                  if (b) { b.style.width = pct + '%'; b.innerText = pct + '%'; if(pct >= 100) b.style.backgroundColor = '#17a2b8'; }
+                }
+            });
+          }
+        }
+      }
+
+      if (filaDeEnvioGlobal.length === 0) { return; }
+      
+      manterTelaAcesa();
+      document.getElementById('containerBotoes').style.display = 'none'; 
+      processarEnvioAsync(0); 
+    }
+
+    async function processarEnvioAsync(index) {
+      if (index >= filaDeEnvioGlobal.length) {
+        logMsg("Lote finalizado.");
+        mostrarStatus("✅ Lote salvo no Computador!", "#28a745");
+        liberarTela();
+        setTimeout(function(){ window.location.reload(); }, 3000);
+        return;
+      }
+
+      var item = filaDeEnvioGlobal[index];
+      var isVideo = item.data.fileObj.type.indexOf('video/') === 0;
+      var fileHash = "";
+
+      try {
+        if (isVideo) {
+            mostrarStatus("⏳ Calculando Hash Progressivo (Aguarde)...", "#6c757d");
+            logMsg("A iniciar cálculo progressivo de hash (Vídeo)");
+            fileHash = await calculateHashWasm(item.data.fileObj);
+        } else {
+            mostrarStatus("⏳ Calculando Hash (Imagem)...", "#6c757d");
+            logMsg("A iniciar cálculo rápido de hash via hash-wasm (Foto)");
+            fileHash = await calculateHashNative(item.data.fileObj);
+        }
+        logMsg("Hash Calculado: " + fileHash.substring(0, 10) + "...");
+        enviarArquivoLocal(index, fileHash);
+      } catch (err) {
+        logMsg("Falha ao calcular Hash: " + err, "err");
+        alert("Erro ao ler o arquivo: " + err);
+        liberarTela();
+      }
+    }
+
+    async function calculateHashWasm(file) {
+      const hasher = await hashwasm.createSHA256();
+      const chunkSize = 5 * 1024 * 1024;
+      let offset = 0;
+
+      while (offset < file.size) {
+        const chunk = file.slice(offset, offset + chunkSize);
+        const buffer = await chunk.arrayBuffer();
+        hasher.update(new Uint8Array(buffer));
+        offset += chunkSize;
+      }
+      return hasher.digest();
+    }
+
+    // A CORREÇÃO ESTÁ AQUI: Usa hash-wasm em vez do bloqueado crypto.subtle
+    async function calculateHashNative(file) {
+        const buffer = await file.arrayBuffer();
+        return await hashwasm.sha256(new Uint8Array(buffer));
+    }
+
+    function enviarArquivoLocal(index, fileHash) {
+      var item = filaDeEnvioGlobal[index];
+      var xhr = new XMLHttpRequest();
+      var tInicioUpload = Date.now();
+      
+      var isVideo = item.data.fileObj.type.indexOf('video/') === 0;
+      var icone = isVideo ? "🚀" : "⚡";
+      
+      mostrarStatus(icone + " Iniciando Envio para o PC...", isVideo ? "#fd7e14" : "#17a2b8");
+      
+      xhr.open('POST', '/upload-binario', true);
+      
+      xhr.setRequestHeader('x-file-name', encodeURIComponent(item.novoNome));
+      xhr.setRequestHeader('x-file-hash', fileHash);
+      xhr.setRequestHeader('x-os-number', encodeURIComponent(item.osNumber));
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          var pct = Math.round((e.loaded / e.total) * 100);
+          if (pct < 100) {
+            mostrarStatus(icone + " Transferindo " + item.novoNome + " (" + pct + "%)...", isVideo ? "#fd7e14" : "#17a2b8");
+          } else {
+            mostrarStatus("⏳ Gravando Mídia e Hash no Disco (Aguarde)...", "#6c757d");
+          }
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          logMsg("OK (" + (Date.now() - tInicioUpload) + "ms)");
+          item.incrementar(item.blockId);
+          processarEnvioAsync(index + 1);
+        } else { tratarFalha("Erro do Servidor: " + xhr.status); }
+      };
+      
+      xhr.onerror = function() { tratarFalha("Conexão Wi-Fi caiu"); };
+      xhr.send(item.data.fileObj);
+
+      function tratarFalha(motivo) {
+        logMsg("Falha: " + motivo, "err");
+        alert("O envio falhou. Motivo: " + motivo);
+        document.getElementById('containerBotoes').style.display = 'flex';
+        liberarTela();
+      }
+    }
+
+    setTimeout(function() { adicionarBlocoOS(); }, 100);
+  </script>
+</body>
+</html>
