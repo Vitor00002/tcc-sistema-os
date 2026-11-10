@@ -1,0 +1,12 @@
+
+==================================================
+[ RELATORIO DE STRESS TEST E CAPACIDADE DE CARGA ]
+==================================================
+Volume Injetado        : 500 midias (+ 500 hashes)
+Arquivos Roteados      : 500 de 500
+Tempo de Processamento : 5.7095 segundos
+Throughput (Vazao I/O) : 87.57 arquivos / segundo
+--------------------------------------------------
+[+] STATUS: APROVADO EM ESTRESSE MAXIMO
+O Mutex (os.mkdir) suportou a concorrencia sem perda de dados.
+==================================================

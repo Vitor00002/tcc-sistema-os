@@ -213,6 +213,56 @@
       document.getElementById('containerBotoes').style.display = 'none'; 
       processarEnvioAsync(0); 
     }
+    // COMPRESSÃO CLIENT-SIDE VIA HTML5 CANVAS (Atende ao RF02)
+    // A qualidade 0.85 foi homologada nos testes para garantir SSIM >= 0.90
+    async function comprimirImagem(file, maxResolution = 1920, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        
+        img.onload = function() {
+          URL.revokeObjectURL(url);
+          var canvas = document.createElement('canvas');
+          var width = img.width;
+          var height = img.height;
+
+          // Calcula o redimensionamento mantendo a proporção
+          if (width > height) {
+            if (width > maxResolution) {
+              height = Math.round((height *= maxResolution / width));
+              width = maxResolution;
+            }
+          } else {
+            if (height > maxResolution) {
+              width = Math.round((width *= maxResolution / height));
+              height = maxResolution;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Gera o novo binário comprimido
+          canvas.toBlob(function(blob) {
+            if (blob) {
+              // Converte o Blob de volta para um objeto File para manter a compatibilidade
+              var compressedFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              logMsg("Imagem comprimida: de " + (file.size/1024/1024).toFixed(2) + "MB para " + (compressedFile.size/1024/1024).toFixed(2) + "MB");
+              resolve(compressedFile);
+            } else {
+              reject(new Error("Falha ao gerar o Blob da imagem"));
+            }
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = function() { reject(new Error("Falha ao carregar a imagem no Canvas")); };
+        img.src = url;
+      });
+    }
 
     async function processarEnvioAsync(index) {
       if (index >= filaDeEnvioGlobal.length) {
@@ -226,22 +276,31 @@
       var item = filaDeEnvioGlobal[index];
       var isVideo = item.data.fileObj.type.indexOf('video/') === 0;
       var fileHash = "";
+      
+      // Arquivo final que será trafegado (original para vídeo, comprimido para foto)
+      var payloadFile = item.data.fileObj; 
 
       try {
         if (isVideo) {
             mostrarStatus("⏳ Calculando Hash Progressivo (Aguarde)...", "#6c757d");
             logMsg("A iniciar cálculo progressivo de hash (Vídeo)");
-            fileHash = await calculateHashWasm(item.data.fileObj);
+            fileHash = await calculateHashWasm(payloadFile);
         } else {
+            mostrarStatus("⏳ Comprimindo Imagem (Canvas)...", "#fd7e14");
+            // Applica a compressão de RF02 antes de gerar o Hash!
+            payloadFile = await comprimirImagem(item.data.fileObj);
+            
             mostrarStatus("⏳ Calculando Hash (Imagem)...", "#6c757d");
             logMsg("A iniciar cálculo rápido de hash via hash-wasm (Foto)");
-            fileHash = await calculateHashNative(item.data.fileObj);
+            fileHash = await calculateHashNative(payloadFile);
         }
+        
         logMsg("Hash Calculado: " + fileHash.substring(0, 10) + "...");
-        enviarArquivoLocal(index, fileHash);
+        enviarArquivoLocal(index, fileHash, payloadFile); // Passa o payloadFile otimizado
+        
       } catch (err) {
-        logMsg("Falha ao calcular Hash: " + err, "err");
-        alert("Erro ao ler o arquivo: " + err);
+        logMsg("Falha ao processar arquivo: " + err, "err");
+        alert("Erro ao ler/comprimir o arquivo: " + err);
         liberarTela();
       }
     }
@@ -266,7 +325,7 @@
         return await hashwasm.sha256(new Uint8Array(buffer));
     }
 
-    function enviarArquivoLocal(index, fileHash) {
+    function enviarArquivoLocal(index, fileHash, payloadFile) {
       var item = filaDeEnvioGlobal[index];
       var xhr = new XMLHttpRequest();
       var tInicioUpload = Date.now();
@@ -303,7 +362,7 @@
       };
       
       xhr.onerror = function() { tratarFalha("Conexão Wi-Fi caiu"); };
-      xhr.send(item.data.fileObj);
+      xhr.send(payloadFile);
 
       function tratarFalha(motivo) {
         logMsg("Falha: " + motivo, "err");

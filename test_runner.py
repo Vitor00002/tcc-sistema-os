@@ -4,10 +4,12 @@ import tempfile
 import hashlib
 import multiprocessing
 import time
+import sys
+
 from main import extrair_os, calcular_hash_local
 
 def simular_instancia_concorrente(lock_dir, queue):
-    """Tenta criar a trava atômica; retorna o status para a fila do teste"""
+    """Tenta criar a trava atomica; retorna o status para a fila do teste"""
     try:
         os.mkdir(lock_dir)
         queue.put("LOCK_ADQUIRIDO")
@@ -25,7 +27,7 @@ class TestSistemaOS(unittest.TestCase):
             ("os15746_foto.jpg", "OS.0015746"),
             ("OS-15746_video.mp4", "OS.0015746"),
             ("  15746 _teste.png", "OS.0015746"),
-            ("sem_underline_aqui.jpg", "OS_DESCONHECIDA") # Arquivo alienígena
+            ("sem_underline_aqui.jpg", "OS_DESCONHECIDA") # Arquivo alienigena
         ]
         
         acertos = 0
@@ -36,7 +38,7 @@ class TestSistemaOS(unittest.TestCase):
         self.assertEqual(acertos, len(cenarios), f"Meta de 100% falhou. Acertos: {acertos}/{len(cenarios)}")
 
     def test_b_rejeicao_conteudo_corrompido(self):
-        """(B) Teste Bit-flip: Altera 1 byte do arquivo e exige rejeição do Hash"""
+        """(B) Teste Bit-flip: Altera 1 byte do arquivo e exige rejeicao do Hash"""
         conteudo_original = b"Evidencia_Intacta_Para_Auditoria"
         hash_origem = hashlib.sha256(conteudo_original).hexdigest()
         
@@ -50,13 +52,13 @@ class TestSistemaOS(unittest.TestCase):
                 
             hash_local_calculado = calcular_hash_local(caminho_temp)
             
-            # A asserção EXIGE que os hashes sejam diferentes (Rejeição com sucesso)
-            self.assertNotEqual(hash_origem, hash_local_calculado, "FALHA CRÍTICA: Arquivo corrompido foi aceito pelo validador!")
+            # A assercao EXIGE que os hashes sejam diferentes (Rejeicao com sucesso)
+            self.assertNotEqual(hash_origem, hash_local_calculado, "FALHA CRITICA: Arquivo corrompido foi aceito pelo validador!")
         finally:
             os.remove(caminho_temp)
 
     def test_c_exclusao_mutua_concorrencia(self):
-        """(C) Teste de Concorrência: Duas execuções simultâneas forçando a mesma trava"""
+        """(C) Teste de Concorrencia: Duas execucoes simultaneas forcando a mesma trava"""
         diretorio_teste = tempfile.mkdtemp()
         lock_dir = os.path.join(diretorio_teste, "lock_dir")
         
@@ -77,9 +79,33 @@ class TestSistemaOS(unittest.TestCase):
             
         os.rmdir(diretorio_teste)
         
-        # Para o teste passar, OBRIGATORIAMENTE uma execução tem que ganhar a trava, e a outra tem que bater e voltar
+        # Para o teste passar, OBRIGATORIAMENTE uma execucao tem que ganhar a trava, e a outra tem que bater e voltar
         self.assertIn("LOCK_ADQUIRIDO", resultados)
         self.assertIn("ACESSO_NEGADO_COM_SUCESSO", resultados)
 
+# Classe para duplicar o texto para o Terminal (sys.stderr) e para o Ficheiro Log
+class DoubleStream:
+    def __init__(self, filename):
+        self.terminal = sys.stderr
+        self.log = open(filename, 'w', encoding='utf-8')
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+    def close(self):
+        self.log.close()
+
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    nome_log = "relatorio_testes_tcc.txt"
+    print(f"=== INICIANDO BATERIA DE TESTES (Gerando log em '{nome_log}') ===")
+    
+    stream_duplo = DoubleStream(nome_log)
+    runner = unittest.TextTestRunner(stream=stream_duplo, verbosity=2)
+    
+    # Executa os testes enviando a saída para a nossa classe DoubleStream
+    unittest.main(testRunner=runner, exit=False)
+    
+    stream_duplo.close()
+    print(f"\n[+] Log de execucao dos testes salvo com sucesso em: {nome_log}")
