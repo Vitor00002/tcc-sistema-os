@@ -99,7 +99,7 @@
       var htmlBloco = "" +
         "<div class='os-block' id='" + blockId + "'>" +
           "<div class='os-header'>" +
-            "<input type='text' id='input_" + blockId + "' placeholder='Nº da OS' required>" +
+            "<input type='number' inputmode='numeric' pattern='[0-9]*' id='input_" + blockId + "' placeholder='Nº da OS' required oninput=\"this.value = this.value.replace(/[^0-9]/g, '')\">" +
             "<button class='btn-remove-block' onclick=\"removerBlocoOS('" + blockId + "')\">✖</button>" +
           "</div>" +
           "<div class='btn-group'>" +
@@ -336,6 +336,9 @@
       mostrarStatus(icone + " Iniciando Envio para o PC...", isVideo ? "#fd7e14" : "#17a2b8");
       
       xhr.open('POST', '/upload-binario', true);
+
+      // INJEÇÃO DO TOKEN DE SEGURANÇA
+      xhr.setRequestHeader('Authorization', 'Bearer TCC-Sec-Auth-2026');
       
       xhr.setRequestHeader('x-file-name', encodeURIComponent(item.novoNome));
       xhr.setRequestHeader('x-file-hash', fileHash);

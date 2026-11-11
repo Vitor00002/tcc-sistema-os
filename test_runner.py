@@ -6,7 +6,7 @@ import multiprocessing
 import time
 import sys
 
-from main import extrair_os, calcular_hash_local
+from main import extrair_e_limpar_os, calcular_hash_local
 
 def simular_instancia_concorrente(lock_dir, queue):
     """Tenta criar a trava atomica; retorna o status para a fila do teste"""
@@ -21,19 +21,28 @@ def simular_instancia_concorrente(lock_dir, queue):
 class TestSistemaOS(unittest.TestCase):
 
     def test_a_roteamento_nomenclatura(self):
-        """(A) Teste de Strings: Garante 100% de acerto no roteamento (sem misturar com hashes)"""
+        print("\n(A) Teste de Strings: Garante 100% de acerto no roteamento (sem misturar com hashes)")
         cenarios = [
             ("15746_Captura.png", "OS.0015746"),
             ("os15746_foto.jpg", "OS.0015746"),
             ("OS-15746_video.mp4", "OS.0015746"),
             ("  15746 _teste.png", "OS.0015746"),
-            ("sem_underline_aqui.jpg", "OS_DESCONHECIDA") # Arquivo alienigena
+            ("sem_underline_aqui.jpg", None) # Arquivo alienígena (Sem OS)
         ]
         
         acertos = 0
-        for nome_entrada, resultado_esperado in cenarios:
-            if extrair_os(nome_entrada) == resultado_esperado:
+        for arquivo, esperado in cenarios:
+            # Captura o retorno bruto do motor principal
+            resultado_bruto = extrair_e_limpar_os(arquivo)
+            
+            # Força a extração do índice 0 (o número da OS), ignorando o resto da tupla
+            os_calculada = resultado_bruto[0] if isinstance(resultado_bruto, tuple) else resultado_bruto
+            
+            if os_calculada == esperado:
                 acertos += 1
+            else:
+                # Se falhar, agora imprime na consola exatamente o que deu errado
+                print(f"    [!] FALHA NO TESTE: Arquivo '{arquivo}' -> Retornou: '{os_calculada}' | Esperado: '{esperado}'")
                 
         self.assertEqual(acertos, len(cenarios), f"Meta de 100% falhou. Acertos: {acertos}/{len(cenarios)}")
 

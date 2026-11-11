@@ -1,11 +1,10 @@
-test_a_roteamento_nomenclatura (__main__.TestSistemaOS)
-(A) Teste de Strings: Garante 100% de acerto no roteamento (sem misturar com hashes) ... ok
+test_a_roteamento_nomenclatura (__main__.TestSistemaOS) ... ok
 test_b_rejeicao_conteudo_corrompido (__main__.TestSistemaOS)
 (B) Teste Bit-flip: Altera 1 byte do arquivo e exige rejeicao do Hash ... ok
 test_c_exclusao_mutua_concorrencia (__main__.TestSistemaOS)
 (C) Teste de Concorrencia: Duas execucoes simultaneas forcando a mesma trava ... ok
 
 ----------------------------------------------------------------------
-Ran 3 tests in 1.793s
+Ran 3 tests in 1.911s
 
 OK
